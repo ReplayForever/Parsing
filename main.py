@@ -1,8 +1,10 @@
-import requests, json
+import requests
+from requests import request
+import json
 
 from urllib.request import urlopen
 from lxml import etree
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -11,6 +13,7 @@ class Ziko:
     name: str
     phones: list
     working_hours: list
+    latlon: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -31,7 +34,7 @@ class Kfc:
 
 def get_address_and_phone_ziko(tree):
     t = 1
-    address_tel = tree.xpath('//tbody/tr[1]/td[@class="mp-table-address"]/text()')
+    address_tel = tree.xpath('//tr[1]/td[@class="mp-table-address"]/text()')
     infolinia = []
     tel = []
     city = []
@@ -43,7 +46,7 @@ def get_address_and_phone_ziko(tree):
         city.append(address_tel.pop())
         address.append(address_tel[0])
         t += 1
-        address_tel = tree.xpath(f'//tbody/tr[{t}]/td[@class="mp-table-address"]/text()')
+        address_tel = tree.xpath(f'//tr[{t}]/td[@class="mp-table-address"]/text()')
 
     for n in tel:
         ind = tel.index(n)
@@ -56,7 +59,7 @@ def get_address_and_phone_ziko(tree):
 
 
 def get_working_time(tree):
-    working = tree.xpath('//tbody/tr[1]/td[@class="mp-table-hours"]/span/text()')
+    working = tree.xpath('//tr[1]/td[@class="mp-table-hours"]/span/text()')
     time_working = []
     ind_working = 1
     while working:
@@ -65,8 +68,21 @@ def get_working_time(tree):
             time_working_in_one.append(working.pop(0) + working.pop(0))
         time_working.append(time_working_in_one)
         ind_working += 1
-        working = tree.xpath(f'//tbody/tr[{ind_working}]/td[@class="mp-table-hours"]/span/text()')
+        working = tree.xpath(f'//tr[{ind_working}]/td[@class="mp-table-hours"]/span/text()')
     return time_working
+
+
+def get_ajax(url):
+    headers = {'Content-Type': 'text/html', }
+    return request('Post', url).json()
+
+
+def add_latlon_ziko(class_item, dict_with_latlon):
+    for item in class_item:
+        for key in dict_with_latlon:
+            if dict_with_latlon[key]['address'] in item['address']:
+                item['latlon'] = [dict_with_latlon[key]['lat'], dict_with_latlon[key]['lng']]
+    pass
 
 
 def create_json(shop_information_list, file_name):
@@ -98,10 +114,9 @@ def modify_address_monomax(address):
 
 def get_kfc_info(row_json):
     kfc = []
-
     for i in range(len(row_json['searchResults'])):
         try:
-            store = row_kfc_json['searchResults'][i]['storePublic']
+            store = row_json['searchResults'][i]['storePublic']
             name_kfc = store['title']['ru']
             latlon_kfc = store['contacts']['coordinates']['geometry']['coordinates']
             phone_kfc = [store['contacts']['phone']['number']] + store['contacts']['phone']['extensions']
@@ -163,8 +178,12 @@ if __name__ == '__main__':
         working_hours=work_time_ziko[i]
     ).__dict__ for i in range(len(phone_ziko))]
 
-    create_json(info_ziko, file_name_ziko)
+    url_ziko_ajax = 'https://www.ziko.pl/wp-admin/admin-ajax.php?action=get_pharmacies'
+    info_ziko_dict = get_ajax(url_ziko_ajax)
 
+    add_latlon_ziko(info_ziko, info_ziko_dict)
+
+    create_json(info_ziko, file_name_ziko)
 
     url_monomax = 'https://monomax.by/map/'
     file_name_monomax = 'monomax'
